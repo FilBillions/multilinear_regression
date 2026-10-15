@@ -33,6 +33,9 @@ class Sampler:
             if self.sample_size >= len(self.df):
                 return self.df.copy()
             else:
+                #Save the old df as population.csv
+                self.df.to_csv('population.csv', index_label='Date')
+                #sample the dataframe randomly without replacement
                 sampled_indices = np.random.choice(self.df.index, size=self.sample_size, replace=False)
                 sampled_df = self.df.loc[sampled_indices].sort_index()
                 print('-'*20)

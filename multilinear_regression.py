@@ -11,7 +11,8 @@ from sampler import Sampler
 np.set_printoptions(legacy='1.25')
 
 #input symbols, start date, end date, and an optional dataframe
-
+#first symbol is always the dependent variable Y
+#the rest of the variables are independent variables X
 class Multilinear_Regression():
     def __init__(self,
                  start = str(date.today() - timedelta(59)),
@@ -33,6 +34,7 @@ class Multilinear_Regression():
             #for every symbol in the list, create a new column in the datafram that its returns, and name the column after the symbol
             for symbol in self.symbol_list:
                 self.df[f'{symbol}'] = np.log(self.df[f'Close {symbol}']).diff() # returns for each symbol
+        #A number identifier to know what samples are being sampled
         self.df['Number'] = np.arange(1, len(self.df) + 1)
         self.df.dropna(inplace = True)
         #Sample frome the given dataframe
@@ -40,10 +42,42 @@ class Multilinear_Regression():
         self.df = sampler.sampled_df
         #store arrays for each variable
         for i in range(self.n_symbols):
-            setattr(self, f'x{i+1}_array', self.df[f'{self.symbol_list[i]}'])
+            setattr(self, f'{self.symbol_list[i]}_array', self.df[f'{self.symbol_list[i]}'])
         self.interval = interval
+        #how many rows is the sampled dataframe not including header
+        self.n = len(self.df) - 1
 
-
+        #Preliminary Calculations
+        #Mean of each variable and store the mean in a dictionary name:mean
+        self.means = {}
+        for i in range(self.n_symbols):
+            setattr(self, f'mean_{self.symbol_list[i]}', self.df[f'{self.symbol_list[i]}'].mean()) # Xbar for each variable
+            self.means[f'{self.symbol_list[i]}'] = getattr(self, f'mean_{self.symbol_list[i]}') #store in dict
+        print(f'Means: {self.means}')
+        self.idx = self.df.index.get_loc(self.df.index[0])
+        self.last_idx = self.df.index.get_loc(self.df.index[-1])
+        def SSxy_calculation(return_array_1, return_array_2, last_idx):
+            #return array 1 is predictor and return array 2 is response variable
+            SSxy = 0
+            for return_idx in range(0, last_idx):
+                SSxy += (return_array_1.iloc[return_idx] - self.means[f'{return_array_1.name}']) * (return_array_2.iloc[return_idx] - self.means[f'{return_array_2.name}'])
+            SSxy = SSxy / (last_idx - 1)
+            return SSxy
+        def SSxx_calculation(return_array, mean_value, last_idx):
+            #Works as SSyy also
+            SSxx = 0
+            for return_idx in range(0, last_idx):
+                SSxx += ((return_array.iloc[return_idx] - mean_value)**2)
+            SSxx = SSxx / (last_idx - 1)
+            return SSxx
+        #Recall Slope is SSXY / SSXX
+        #Calculate Slope Coefficients for each variable
+        self.slopes = {}
+        #we use 1 because 0 is our dependent variable Y
+        for i in range(1, self.n_symbols):
+            slope = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx) / SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx)
+            self.slopes[f'{self.symbol_list[i]}'] = slope
+        print(f'Slope Coefficients: {self.slopes}')
     def hypothesis_test(self, significance_level=.05):
         # Null Hypothesis is Slope = 0
         # Alternative Hypothesis is Slope != 0
@@ -89,9 +123,10 @@ class Multilinear_Regression():
 
     def scatterplot_matrix(self):
         #for each symbol in the list, create a scatterplot matrix of the returns
-        fig = px.scatter_matrix(self.df, dimensions=self.symbol_list, color=self.df.index)
-        fig.update_layout(width=1000, height=1000)
-        fig.update_layout(showlegend=False)
-        fig.update_layout(title=f'Scatterplot Matrix of {", ".join(self.symbol_list)}', template='plotly_dark')
+        fig = px.scatter_matrix(self.df, 
+                                dimensions=self.symbol_list, 
+                                title='Scatterplot Matrix of Returns',
+                                )
+        fig.update_traces(showupperhalf=False, diagonal_visible=False)
+        fig.update_layout(width=800, height=800)
         fig.show()
-
