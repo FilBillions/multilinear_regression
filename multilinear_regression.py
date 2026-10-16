@@ -44,7 +44,7 @@ class Multilinear_Regression():
         for i in range(self.n_symbols):
             setattr(self, f'{self.symbol_list[i]}_array', self.df[f'{self.symbol_list[i]}'])
         self.interval = interval
-        #how many rows is the sampled dataframe not including header
+        #the sample size - degrees of freedom
         self.n = len(self.df) - 1
 
         #Preliminary Calculations
@@ -55,29 +55,44 @@ class Multilinear_Regression():
             self.means[f'{self.symbol_list[i]}'] = getattr(self, f'mean_{self.symbol_list[i]}') #store in dict
         print(f'Means: {self.means}')
         self.idx = self.df.index.get_loc(self.df.index[0])
-        self.last_idx = self.df.index.get_loc(self.df.index[-1])
+        self.last_idx = len(self.df)
         def SSxy_calculation(return_array_1, return_array_2, last_idx):
-            #return array 1 is predictor and return array 2 is response variable
+        #return array 1 is predictor and return array 2 is response variable
             SSxy = 0
             for return_idx in range(0, last_idx):
                 SSxy += (return_array_1.iloc[return_idx] - self.means[f'{return_array_1.name}']) * (return_array_2.iloc[return_idx] - self.means[f'{return_array_2.name}'])
-            SSxy = SSxy / (last_idx - 1)
             return SSxy
         def SSxx_calculation(return_array, mean_value, last_idx):
-            #Works as SSyy also
+        #Works as SSyy also
             SSxx = 0
             for return_idx in range(0, last_idx):
                 SSxx += ((return_array.iloc[return_idx] - mean_value)**2)
-            SSxx = SSxx / (last_idx - 1)
             return SSxx
-        #Recall Slope is SSXY / SSXX
-        #Calculate Slope Coefficients for each variable
+    #Calculate Slope Coefficients for each variable
         self.slopes = {}
-        #we use 1 because 0 is our dependent variable Y
-        for i in range(1, self.n_symbols):
+        for i in range(1, self.n_symbols): #we use 1 because 0 is our dependent variable Y
             slope = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx) / SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx)
             self.slopes[f'{self.symbol_list[i]}'] = slope
-        print(f'Slope Coefficients: {self.slopes}')
+    #store the variances in a dictionary name:variance
+        self.variances = {}
+        for i in range(self.n_symbols):
+            variance = SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx) / ((self.n))
+            setattr(self, f'variance_{self.symbol_list[i]}', variance)
+            self.variances[f'{self.symbol_list[i]}'] = variance
+    #store the covariances in a dictionary name:covariance
+        self.covariances = {}
+        for i in range(1, self.n_symbols):
+            covariance = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx) / ((self.n))
+            setattr(self, f'covariance_{self.symbol_list[i]}', covariance)
+            self.covariances[f'{self.symbol_list[i]}'] = covariance
+    #calculate the Y intercept
+        self.y_int = self.means[f'{self.symbol_list[0]}'] - sum([self.slopes[f'{self.symbol_list[i]}'] * self.means[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])
+    #Create presentation Dataframe
+        self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
+        self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
+        self.presentation_df['Coefficent'] = [self.y_int] + [self.slopes[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+    def return_coefficients(self):
+        return self.presentation_df
     def hypothesis_test(self, significance_level=.05):
         # Null Hypothesis is Slope = 0
         # Alternative Hypothesis is Slope != 0
