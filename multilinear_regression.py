@@ -44,9 +44,8 @@ class Multilinear_Regression():
         for i in range(self.n_symbols):
             setattr(self, f'{self.symbol_list[i]}_array', self.df[f'{self.symbol_list[i]}'])
         self.interval = interval
-        #the sample size - degrees of freedom
-        self.n = len(self.df) - 1
-
+        self.n = len(self.df)
+        print(f'Number of Samples: {self.n}')
         #Preliminary Calculations
         #Mean of each variable and store the mean in a dictionary name:mean
         self.means = {}
@@ -68,6 +67,16 @@ class Multilinear_Regression():
             for return_idx in range(0, last_idx):
                 SSxx += ((return_array.iloc[return_idx] - mean_value)**2)
             return SSxx
+    #Store the SSxy and SSxx for each variable in a dictionary name:ssxy and ssxx
+        self.ssxy = {}
+        self.ssxx = {}
+        for i in range(1, self.n_symbols): #we use 1 because 0 is our dependent variable Y
+            ssxy = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx)
+            ssxx = SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx)
+            setattr(self, f'ssxy_{self.symbol_list[i]}', ssxy)
+            setattr(self, f'ssxx_{self.symbol_list[i]}', ssxx)
+            self.ssxy[f'{self.symbol_list[i]}'] = ssxy
+            self.ssxx[f'{self.symbol_list[i]}'] = ssxx
     #Calculate Slope Coefficients for each variable
         self.slopes = {}
         for i in range(1, self.n_symbols): #we use 1 because 0 is our dependent variable Y
@@ -76,23 +85,42 @@ class Multilinear_Regression():
     #store the variances in a dictionary name:variance
         self.variances = {}
         for i in range(self.n_symbols):
-            variance = SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx) / ((self.n))
+            variance = SSxx_calculation(getattr(self, f'{self.symbol_list[i]}_array'), self.means[f'{self.symbol_list[i]}'], self.last_idx) / ((self.n) - 1)
             setattr(self, f'variance_{self.symbol_list[i]}', variance)
             self.variances[f'{self.symbol_list[i]}'] = variance
     #store the covariances in a dictionary name:covariance
         self.covariances = {}
         for i in range(1, self.n_symbols):
-            covariance = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx) / ((self.n))
+            covariance = SSxy_calculation(getattr(self, f'{self.symbol_list[i]}_array'), getattr(self, f'{self.symbol_list[0]}_array'), self.last_idx) / ((self.n) - 1)
             setattr(self, f'covariance_{self.symbol_list[i]}', covariance)
             self.covariances[f'{self.symbol_list[i]}'] = covariance
     #calculate the Y intercept
         self.y_int = self.means[f'{self.symbol_list[0]}'] - sum([self.slopes[f'{self.symbol_list[i]}'] * self.means[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])
+    #Use Y intercept and Slopes to calculate the predicted Y values for each sample -> Y Hat
+        self.df['Predicted Y'] = self.y_int + sum([self.slopes[f'{self.symbol_list[i]}'] * getattr(self, f'{self.symbol_list[i]}_array') for i in range(1, self.n_symbols)])
+    #ANOVA Calculations
+    #Were using a different SSR calculation that forces the x variables to be uncorrelated
+    #we will change that once we add tests for correlation
+        self.regression_df = self.n_symbols - 1 #The number of independent variables
+        self.residual_df = self.n - self.regression_df - 1
+        self.total_df = self.n - 1
+        #SSR is the sum of the slope times ssxy
+        self.ssr = sum([self.slopes[f'{self.symbol_list[i]}'] * self.ssxy[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])
+        self.sst = sum([(self.df[f'{self.symbol_list[0]}'].iloc[i] - self.means[f'{self.symbol_list[0]}'])**2 for i in range(self.last_idx)])
+        self.sse = self.sst - self.ssr
+        self.sst_check = self.ssr + self.sse
+        print(f'SSR = {round(self.ssr,4)} | SSE = {round(self.sse,4)} | SST = {round(self.sst,4)} | SST Check = {round(self.sst_check,4)}')
     #Create presentation Dataframe
         self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
         self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
         self.presentation_df['Coefficent'] = [self.y_int] + [self.slopes[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+    #Create ANOVA Table
+        self.anova_df = pd.DataFrame(columns=['', 'DF', 'SS', 'MS', 'F', 'P-value'])
+        self.anova_df[''] = ['Regression', 'Residual', 'Total']
+        self.anova_df['DF'] = [self.regression_df, self.residual_df, self.total_df]
+        self.anova_df['SS'] = [self.ssr, self.sse, self.sst]
     def return_coefficients(self):
-        return self.presentation_df
+        return self.presentation_df, self.anova_df
     def hypothesis_test(self, significance_level=.05):
         # Null Hypothesis is Slope = 0
         # Alternative Hypothesis is Slope != 0
