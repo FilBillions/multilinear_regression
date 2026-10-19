@@ -98,6 +98,7 @@ class Multilinear_Regression():
         self.y_int = self.means[f'{self.symbol_list[0]}'] - sum([self.slopes[f'{self.symbol_list[i]}'] * self.means[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])
     #Use Y intercept and Slopes to calculate the predicted Y values for each sample -> Y Hat
         self.df['Predicted Y'] = self.y_int + sum([self.slopes[f'{self.symbol_list[i]}'] * getattr(self, f'{self.symbol_list[i]}_array') for i in range(1, self.n_symbols)])
+
     #ANOVA Calculations
     #Were using a different SSR calculation that forces the x variables to be uncorrelated
     #we will change that once we add tests for correlation
@@ -109,16 +110,33 @@ class Multilinear_Regression():
         self.sst = sum([(self.df[f'{self.symbol_list[0]}'].iloc[i] - self.means[f'{self.symbol_list[0]}'])**2 for i in range(self.last_idx)])
         self.sse = self.sst - self.ssr
         self.sst_check = self.ssr + self.sse
-        print(f'SSR = {round(self.ssr,4)} | SSE = {round(self.sse,4)} | SST = {round(self.sst,4)} | SST Check = {round(self.sst_check,4)}')
+        self.msr = self.ssr / self.regression_df
+        self.mse = self.sse / self.residual_df
+        self.F_statistic = self.msr / self.mse
+    #Standard Error Calculations
+        self.standard_error_of_estimate = math.sqrt(self.mse)
+        self.standard_error_of_slope = {}
+        for i in range(1, self.n_symbols):
+            standard_error = self.standard_error_of_estimate / (math.sqrt(self.ssxx[f'{self.symbol_list[i]}']))
+            setattr(self, f'standard_error_of_slope_{self.symbol_list[i]}', standard_error)
+            self.standard_error_of_slope[f'{self.symbol_list[i]}'] = standard_error
+        self.standard_error_of_intercept = self.standard_error_of_estimate * math.sqrt((1/self.n) + (sum([self.means[f'{self.symbol_list[i]}']**2 / self.ssxx[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])))
+        print(self.standard_error_of_estimate) 
+        print(math.sqrt((1/self.n)))
+        print((sum([self.means[f'{self.symbol_list[i]}']**2 / self.ssxx[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])))
+        print(self.standard_error_of_intercept)
     #Create presentation Dataframe
         self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
         self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
         self.presentation_df['Coefficent'] = [self.y_int] + [self.slopes[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+        self.presentation_df['Standard Error'] = [self.standard_error_of_intercept] + [self.standard_error_of_slope[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
     #Create ANOVA Table
         self.anova_df = pd.DataFrame(columns=['', 'DF', 'SS', 'MS', 'F', 'P-value'])
         self.anova_df[''] = ['Regression', 'Residual', 'Total']
         self.anova_df['DF'] = [self.regression_df, self.residual_df, self.total_df]
         self.anova_df['SS'] = [self.ssr, self.sse, self.sst]
+        self.anova_df['MS'] = [self.msr, self.mse, '']
+        self.anova_df['F'] = [self.F_statistic, '', '']
     def return_coefficients(self):
         return self.presentation_df, self.anova_df
     def hypothesis_test(self, significance_level=.05):
