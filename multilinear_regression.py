@@ -52,7 +52,6 @@ class Multilinear_Regression():
         for i in range(self.n_symbols):
             setattr(self, f'mean_{self.symbol_list[i]}', self.df[f'{self.symbol_list[i]}'].mean()) # Xbar for each variable
             self.means[f'{self.symbol_list[i]}'] = getattr(self, f'mean_{self.symbol_list[i]}') #store in dict
-        print(f'Means: {self.means}')
         self.idx = self.df.index.get_loc(self.df.index[0])
         self.last_idx = len(self.df)
         def SSxy_calculation(return_array_1, return_array_2, last_idx):
@@ -98,7 +97,8 @@ class Multilinear_Regression():
         self.y_int = self.means[f'{self.symbol_list[0]}'] - sum([self.slopes[f'{self.symbol_list[i]}'] * self.means[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])
     #Use Y intercept and Slopes to calculate the predicted Y values for each sample -> Y Hat
         self.df['Predicted Y'] = self.y_int + sum([self.slopes[f'{self.symbol_list[i]}'] * getattr(self, f'{self.symbol_list[i]}_array') for i in range(1, self.n_symbols)])
-
+    #Create a new column for residuals -> Y - Y Hat
+        self.df['Residuals'] = self.df[f'{self.symbol_list[0]}'] - self.df['Predicted Y']
     #ANOVA Calculations
     #Were using a different SSR calculation that forces the x variables to be uncorrelated
     #we will change that once we add tests for correlation
@@ -121,66 +121,89 @@ class Multilinear_Regression():
             setattr(self, f'standard_error_of_slope_{self.symbol_list[i]}', standard_error)
             self.standard_error_of_slope[f'{self.symbol_list[i]}'] = standard_error
         self.standard_error_of_intercept = self.standard_error_of_estimate * math.sqrt((1/self.n) + (sum([self.means[f'{self.symbol_list[i]}']**2 / self.ssxx[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])))
-        print(self.standard_error_of_estimate) 
-        print(math.sqrt((1/self.n)))
-        print((sum([self.means[f'{self.symbol_list[i]}']**2 / self.ssxx[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])))
-        print(self.standard_error_of_intercept)
+    #Hypothesis Testing
+        self.t_statistic = {}
+        self.t_intercept = self.y_int / self.standard_error_of_intercept
+        self.t_statistic['Intercept'] = self.t_intercept
+        setattr(self, f't_statistic_Intercept', self.t_intercept)
+        for i in range(1, self.n_symbols):
+            t_stat = self.slopes[f'{self.symbol_list[i]}'] / self.standard_error_of_slope[f'{self.symbol_list[i]}']
+            setattr(self, f't_statistic_{self.symbol_list[i]}', t_stat)
+            self.t_statistic[f'{self.symbol_list[i]}'] = t_stat
+    #P-value Calculations
+        self.p_values = {}
+        self.p_intercept = 2 * (1 - stats.t.cdf(abs(self.t_intercept), self.residual_df))
+        self.p_values['Intercept'] = self.p_intercept
+        for i in range(1, self.n_symbols):
+            p_value = 2 * (1 - stats.t.cdf(abs(self.t_statistic[f'{self.symbol_list[i]}']), self.residual_df))
+            self.p_values[f'{self.symbol_list[i]}'] = p_value
+    #Confidence Interval Calculations
+        self.confidence_intervals_lower = {}
+        self.confidence_intervals_upper = {}
+        self.confidence_intervals_lower['Intercept'] = self.y_int - (stats.t.ppf(1-((1-.95) / 2), self.residual_df) * self.standard_error_of_intercept)
+        self.confidence_intervals_upper['Intercept'] = self.y_int + (stats.t.ppf(1-((1-.95) / 2), self.residual_df) * self.standard_error_of_intercept)
+        for i in range(1, self.n_symbols):
+            lower_level = self.slopes[f'{self.symbol_list[i]}'] - (stats.t.ppf(1-((1-.95) / 2), self.residual_df) * self.standard_error_of_slope[f'{self.symbol_list[i]}'])
+            upper_level = self.slopes[f'{self.symbol_list[i]}'] + (stats.t.ppf(1-((1-.95) / 2), self.residual_df) * self.standard_error_of_slope[f'{self.symbol_list[i]}'])
+            self.confidence_intervals_lower[f'{self.symbol_list[i]}'] = lower_level
+            self.confidence_intervals_upper[f'{self.symbol_list[i]}'] = upper_level
     #Create presentation Dataframe
         self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
         self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
         self.presentation_df['Coefficent'] = [self.y_int] + [self.slopes[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
         self.presentation_df['Standard Error'] = [self.standard_error_of_intercept] + [self.standard_error_of_slope[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+        self.presentation_df['t Stat'] = [self.t_statistic['Intercept']] + [self.t_statistic[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+        self.presentation_df['P-value'] = [self.p_values['Intercept']] + [self.p_values[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+        self.presentation_df['Lower 95%'] = [self.confidence_intervals_lower['Intercept']] + [self.confidence_intervals_lower[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
+        self.presentation_df['Upper 95%'] = [self.confidence_intervals_upper['Intercept']] + [self.confidence_intervals_upper[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)]
     #Create ANOVA Table
-        self.anova_df = pd.DataFrame(columns=['', 'DF', 'SS', 'MS', 'F', 'P-value'])
+        self.anova_df = pd.DataFrame(columns=['', 'DF', 'SS', 'MS', 'F'])
         self.anova_df[''] = ['Regression', 'Residual', 'Total']
         self.anova_df['DF'] = [self.regression_df, self.residual_df, self.total_df]
         self.anova_df['SS'] = [self.ssr, self.sse, self.sst]
         self.anova_df['MS'] = [self.msr, self.mse, '']
         self.anova_df['F'] = [self.F_statistic, '', '']
-    def return_coefficients(self):
-        return self.presentation_df, self.anova_df
-    def hypothesis_test(self, significance_level=.05):
-        # Null Hypothesis is Slope = 0
-        # Alternative Hypothesis is Slope != 0
-        t = self.slope / self.standard_error_of_slope
-        critical_value = stats.t.ppf(1-(significance_level / 2), self.n - 2)
-        if abs(t) > critical_value:
-            print(f'We REJECT the Null Hypothesis')
-            print('-' * 50)
-            print(f'The Test Statistic {round(t,4)} falls in the rejection region of {round(critical_value,4)}')
-            print(f"We can conclude that the slope of the linear regression between {self.symbol_list[0]} and {self.symbol_list[1]} is not 0")
-            print("Thus, we can predict the value of Y based on a given X, and conclude that X contributes to Y")
-        else:
-            print(f"We CANNOT reject the Null Hypothesis at this signficance level")
-            print(f'The Test Statistic {round(t,4)} does not fall into the rejection region of {round(critical_value,4)}')
-            print(f"More than likely no linear relationship exists between {self.symbol_list[0]} and {self.symbol_list[1]}")
-
-    def slope_confidence_interval(self, confidence_level=.95):
-        critical_value = stats.t.ppf(1-((1-confidence_level) / 2), self.n - 2)
-        upper_level = self.slope + (critical_value * self.standard_error_of_slope)
-        lower_level = self.slope - (critical_value * self.standard_error_of_slope)
-        interval = [round(lower_level,4), round(upper_level,4)]
-        print(f'{confidence_level * 100}% Confidence Level: Slope lies between {interval}')
-        return interval
     
-    def find_y(self, x, confidence_level=.95, find_mean=False):
-        #y is also called Y hat here
-        y = self.y_int + self.slope * x
-        critical_value = stats.t.ppf(1-((1-confidence_level) / 2), self.n - 2)
-        print(f'Given X: {x} | Expect Y: {round(y,4)}')
-        if find_mean is True:
-            #Whenever we run the model on X, we'd expect Y to lie within this interval
-            # i dont think this math is right
-            upper_level = y + critical_value * self.standard_error_of_estimate * math.sqrt((1/self.n) + ((x - self.mean_x)**2 / self.ssxx))
-            lower_level = y - critical_value * self.standard_error_of_estimate * math.sqrt((1/self.n) + ((x - self.mean_x)**2 / self.ssxx))
-            interval = [round(lower_level * 100,4), round(upper_level * 100,4)]
-            print (f'{confidence_level * 100}% Confidence Interval of Y Mean: If {self.x_name} moves {x * 100}%, we expect the mean of {self.y_name} to move {round(y,4) * 100}% between the interval {interval}')
+    def residual_plots(self):
+        print("Residuals vs Predicted Values Plot")
+        print("Things to look for in the plot:")
+        print("If the residuals are randomly scattered around 0, then the model is appropriate for the data")
+        print("If the residuals show a pattern, then the model is not appropriate for the data")
+        print("Outliers  can be used to check for influential points that may be affecting the model")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=self.df['Predicted Y'], y=self.df['Residuals'], mode='markers', name='Data Points'))
+        fig.add_trace(go.Scatter(x=self.df['Predicted Y'], y=[0]*len(self.df), mode='lines', name='Zero Line', line=dict(color='red', dash='dash')))
+        fig.update_layout(title='Residuals vs Predicted Values',
+                          xaxis_title='Predicted Values',
+                          yaxis_title='Residuals',
+                          showlegend=True)
+        fig.show()
+
+        print("Residuals vs Independent Variables Plot")
+        fig = go.Figure()
+    # each independent variable will have its own subplot
+        for i in range(1, self.n_symbols):
+            fig.add_trace(go.Scatter(x=self.df[f'{self.symbol_list[i]}'], y=self.df['Residuals'], mode='markers', name=f'{self.symbol_list[i]}'))
+            fig.update_layout(title='Residuals vs Independent Variables',
+                          xaxis_title='Independent Variables',
+                          yaxis_title='Residuals',
+                          showlegend=True)
+            fig.show()
+
+    # if theres a trend, print a note that says theres probably a trend
+        if self.df['Predicted Y'].corr(self.df['Residuals']) > 0.5:
+            print("There is a strong positive correlation between the predicted values and the actual values")
+            print("Thus, we can predict the value of Y based on a given X, and conclude that X contributes to Y")
+            print("This model is weak!!")
         else:
-            # Prediction interval for a single test of Y
-            upper_level = y + critical_value * (self.standard_error_of_estimate * math.sqrt(1 + (1/self.n) + ((x - self.mean_x)**2 / self.ssxx)))
-            lower_level = y - critical_value * (self.standard_error_of_estimate * math.sqrt(1 + (1/self.n) + ((x - self.mean_x)**2 / self.ssxx)))
-            interval = [round(lower_level * 100,4), round(upper_level * 100,4)]
-            print (f'{confidence_level * 100}% Prediction Interval: If {self.x_name} moves {x * 100}%, we expect {self.y_name} to move {round(y,4) * 100}% between the interval {interval}')
+            print("There is a weak correlation between the predicted values and the actual values, this is good!")
+    
+    def return_coefficients(self):
+        print("If P-value < 0.05, we can reject the null hypothesis that the coefficient is equal to 0")
+        print("If P-value > 0.05, we cannot reject the null hypothesis that the coefficient is equal to 0")
+        print(self.presentation_df)
+        print('-' * 50)
+        print(self.anova_df)
 
     def scatterplot_matrix(self):
         #for each symbol in the list, create a scatterplot matrix of the returns
