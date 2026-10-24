@@ -176,28 +176,36 @@ class Multilinear_Regression():
         fig.update_layout(title='Residuals vs Predicted Values',
                           xaxis_title='Predicted Values',
                           yaxis_title='Residuals',
-                          showlegend=True)
+                          showlegend=True,
+                          width=800,
+                          height=400)
         fig.show()
 
         print("Residuals vs Independent Variables Plot")
-        fig = go.Figure()
-    # each independent variable will have its own subplot
-        for i in range(1, self.n_symbols):
-            fig.add_trace(go.Scatter(x=self.df[f'{self.symbol_list[i]}'], y=self.df['Residuals'], mode='markers', name=f'{self.symbol_list[i]}'))
-            fig.update_layout(title='Residuals vs Independent Variables',
-                          xaxis_title='Independent Variables',
-                          yaxis_title='Residuals',
-                          showlegend=True)
-            fig.show()
-
-    # if theres a trend, print a note that says theres probably a trend
+            # if theres a trend, print a note that says theres probably a trend
         if self.df['Predicted Y'].corr(self.df['Residuals']) > 0.5:
             print("There is a strong positive correlation between the predicted values and the actual values")
-            print("Thus, we can predict the value of Y based on a given X, and conclude that X contributes to Y")
-            print("This model is weak!!")
+            print("Investigate this relationship further, as it may indicate that the model is not appropriate for the data")
         else:
             print("There is a weak correlation between the predicted values and the actual values, this is good!")
-    
+
+    # each independent variable will have its own subplot
+        for i in range(1, self.n_symbols):
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=self.df[f'{self.symbol_list[i]}'], y=self.df['Residuals'], mode='markers', name=f'{self.symbol_list[i]}'))
+            fig.update_layout(title=f'Residuals vs {self.symbol_list[i]}',
+                          xaxis_title=f'{self.symbol_list[i]}',
+                          yaxis_title='Residuals',
+                          showlegend=True,
+                          width=800,
+                          height=400)
+            fig.show()
+            if self.df[f'{self.symbol_list[i]}'].corr(self.df['Residuals']) > 0.5:
+                print(f"There is a strong positive correlation between {self.symbol_list[i]} and the residuals")
+                print(f"Investigate this relationship further, as it may indicate that the model is not appropriate for the data")
+            else:
+                print(f"There is a weak correlation between {self.symbol_list[i]} and the residuals, this is good!")
+
     def return_coefficients(self):
         print("If P-value < 0.05, we can reject the null hypothesis that the coefficient is equal to 0")
         print("If P-value > 0.05, we cannot reject the null hypothesis that the coefficient is equal to 0")
@@ -214,3 +222,36 @@ class Multilinear_Regression():
         fig.update_traces(showupperhalf=False, diagonal_visible=False)
         fig.update_layout(width=800, height=800)
         fig.show()
+
+    def qq_plot(self):
+        print("QQ Plot of Residuals")
+        print("If the residuals are normally distributed, the points will fall on the line")
+        print("If observations are far from the line, they may be outliers or influential points that may be affecting the model")
+        fig = go.Figure()
+        (theoretical_quantiles, sample_quantiles), (slope, intercept, _) = stats.probplot(
+            self.df['Residuals'], dist="norm"
+        )
+        fig.add_trace(go.Scatter(
+            x=theoretical_quantiles,
+            y=sample_quantiles,
+            mode='markers',
+            name='Residuals',
+        ))
+        fig.add_trace(go.Scatter(
+            x=theoretical_quantiles,
+            y=slope * theoretical_quantiles + intercept,
+            mode='lines',
+            name='Normal reference line',
+        ))
+        fig.update_layout(title='QQ Plot of Residuals',
+                          xaxis_title='Theoretical Quantiles',
+                          yaxis_title='Sample Quantiles',
+                          width=800,
+                          height=400)
+        fig.show()
+        if self.df['Residuals'].skew() > .5 or self.df['Residuals'].skew() < -.5:
+            print("The residuals are highly skewed, which may indicate that the model is not appropriate for the data")
+            print("Consider transforming the dependent variable or using a different model")
+            print(f"Skewness of Residuals: {round(self.df['Residuals'].skew(), 4)}")
+        else:
+            print("The residuals are not highly skewed, which is good!")
