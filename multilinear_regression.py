@@ -147,6 +147,12 @@ class Multilinear_Regression():
             upper_level = self.slopes[f'{self.symbol_list[i]}'] + (stats.t.ppf(1-((1-.95) / 2), self.residual_df) * self.standard_error_of_slope[f'{self.symbol_list[i]}'])
             self.confidence_intervals_lower[f'{self.symbol_list[i]}'] = lower_level
             self.confidence_intervals_upper[f'{self.symbol_list[i]}'] = upper_level
+    #R Squared Calculations
+        self.multiple_r = math.sqrt(self.ssr / self.sst)
+        self.r_squared = self.ssr / self.sst
+        self.adjusted_r_squared = 1 - ((1 - self.r_squared) * ((self.n - 1) / (self.n - self.regression_df - 1)))
+        self.standard_error_r = math.sqrt(self.mse)
+        self.log_likelihood = -((self.n / 2) * (math.log(2 * math.pi))) - ((self.n / 2) * (math.log(self.mse))) - ((1 / (2 * self.mse)) * self.sse)
     #Create presentation Dataframe
         self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
         self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
@@ -163,7 +169,11 @@ class Multilinear_Regression():
         self.anova_df['SS'] = [self.ssr, self.sse, self.sst]
         self.anova_df['MS'] = [self.msr, self.mse, '']
         self.anova_df['F'] = [self.F_statistic, '', '']
-    
+    #Create R-Squared Table
+        self.r_table_df = pd.DataFrame(columns=['', 'Value'])
+        self.r_table_df[''] = ['Multiple R', 'R-Squared', 'Adjusted R-Squared', 'Standard Error', 'Log-Likelihood', 'Observations']
+        self.r_table_df['Value'] = [self.multiple_r, self.r_squared, self.adjusted_r_squared, self.standard_error_r, self.log_likelihood, self.n]
+
     def residual_plots(self):
         print("Residuals vs Predicted Values Plot")
         print("Things to look for in the plot:")
@@ -206,12 +216,18 @@ class Multilinear_Regression():
             else:
                 print(f"There is a weak correlation between {self.symbol_list[i]} and the residuals, this is good!")
 
-    def return_coefficients(self):
-        print("If P-value < 0.05, we can reject the null hypothesis that the coefficient is equal to 0")
-        print("If P-value > 0.05, we cannot reject the null hypothesis that the coefficient is equal to 0")
-        print(self.presentation_df)
-        print('-' * 50)
-        print(self.anova_df)
+    def return_coefficients(self, coeff=False, anova=False, r_table=False):
+        if coeff == True:
+            print("If P-value < 0.05, we can reject the null hypothesis that the coefficient is equal to 0")
+            print("If P-value > 0.05, we cannot reject the null hypothesis that the coefficient is equal to 0")
+            print("Coefficients:")
+            return self.presentation_df
+        if anova == True:
+            print("ANOVA Table:")
+            return self.anova_df
+        if r_table == True:
+            print("R-Squared Table:")
+            return self.r_table_df
 
     def scatterplot_matrix(self):
         #for each symbol in the list, create a scatterplot matrix of the returns
