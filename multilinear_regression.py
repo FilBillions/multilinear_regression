@@ -19,9 +19,12 @@ class Multilinear_Regression():
                  end = str(date.today() - timedelta(1)),
                  interval = '1d',
                  symbol_list=None,
+                 sample=True,
                  optional_df=None):
         if optional_df is not None:
             self.df = optional_df
+            self.symbol_list = symbol_list
+            self.n_symbols = len(self.symbol_list)
         else:
             #Download the data from Yahoo Finance
             df = yf.download(symbol_list, start, end, interval = interval, multi_level_index=False, ignore_tz=True)
@@ -38,14 +41,16 @@ class Multilinear_Regression():
         self.df['Number'] = np.arange(1, len(self.df) + 1)
         self.df.dropna(inplace = True)
         #Sample frome the given dataframe
-        sampler = Sampler(self.df)
-        self.df = sampler.sampled_df
+        if sample:
+            sampler = Sampler(self.df)
+            self.df = sampler.sampled_df
+            self.n = len(self.df)
+            print(f'Number of Samples: {self.n}')
         #store arrays for each variable
         for i in range(self.n_symbols):
             setattr(self, f'{self.symbol_list[i]}_array', self.df[f'{self.symbol_list[i]}'])
         self.interval = interval
         self.n = len(self.df)
-        print(f'Number of Samples: {self.n}')
         #Preliminary Calculations
         #Mean of each variable and store the mean in a dictionary name:mean
         self.means = {}
@@ -153,6 +158,8 @@ class Multilinear_Regression():
         self.adjusted_r_squared = 1 - ((1 - self.r_squared) * ((self.n - 1) / (self.n - self.regression_df - 1)))
         self.standard_error_r = math.sqrt(self.mse)
         self.log_likelihood = -((self.n / 2) * (math.log(2 * math.pi))) - ((self.n / 2) * (math.log(self.mse))) - ((1 / (2 * self.mse)) * self.sse)
+        self.aic = self.n * (math.log(self.sse / self.n)) + (2 * (self.regression_df + 1))
+        self.bic = self.n * (math.log(self.sse / self.n)) + ((self.regression_df + 1) * math.log(self.n))
     #Create presentation Dataframe
         self.presentation_df = pd.DataFrame(columns=['', 'Coefficent', 'Standard Error', 't Stat', 'P-value', 'Lower 95%', 'Upper 95%'])
         self.presentation_df[''] = ['Intercept'] + [f'{self.symbol_list[i]}' for i in range(1, self.n_symbols)]
@@ -171,8 +178,8 @@ class Multilinear_Regression():
         self.anova_df['F'] = [self.F_statistic, '', '']
     #Create R-Squared Table
         self.r_table_df = pd.DataFrame(columns=['', 'Value'])
-        self.r_table_df[''] = ['Multiple R', 'R-Squared', 'Adjusted R-Squared', 'Standard Error', 'Log-Likelihood', 'Observations']
-        self.r_table_df['Value'] = [self.multiple_r, self.r_squared, self.adjusted_r_squared, self.standard_error_r, self.log_likelihood, self.n]
+        self.r_table_df[''] = ['Multiple R', 'R-Squared', 'Adjusted R-Squared', 'Standard Error', 'Log-Likelihood', 'AIC', 'BIC', 'Observations']
+        self.r_table_df['Value'] = [self.multiple_r, self.r_squared, self.adjusted_r_squared, self.standard_error_r, self.log_likelihood, self.aic, self.bic, self.n]
 
     def residual_plots(self):
         print("Residuals vs Predicted Values Plot")
@@ -271,3 +278,31 @@ class Multilinear_Regression():
             print(f"Skewness of Residuals: {round(self.df['Residuals'].skew(), 4)}")
         else:
             print("The residuals are not highly skewed, which is good!")
+
+    def goodness_of_fit(self):
+        #run a multilinear regression for each combination of variables
+        #So first run 1 independent 1 dependent, then 2, then 3 etc etc
+        goodness_of_fit_r2 = {}
+        goodness_of_fit_adj_r2 = {}
+        goodness_of_fit_aic = {}
+        goodness_of_fit_bic = {}
+        list_of_symbol_combinations = []
+        for symbol in self.symbol_list[1:]:
+            list_of_symbol_combinations.append([self.symbol_list[0], symbol])
+        for i in range(2, self.n_symbols):
+            for j in range(1, self.n_symbols):
+                if j + i <= self.n_symbols:
+                    list_of_symbol_combinations.append([self.symbol_list[0]] + [self.symbol_list[k] for k in range(j, j + i)])
+        for symbol_combination in list_of_symbol_combinations:
+            regression = Multilinear_Regression(symbol_list=symbol_combination, sample=False, optional_df=self.df)
+            goodness_of_fit_r2[f"{symbol_combination}"] = regression.r_squared
+            goodness_of_fit_adj_r2[f"{symbol_combination}"] = regression.adjusted_r_squared
+            goodness_of_fit_aic[f"{symbol_combination}"] = regression.aic
+            goodness_of_fit_bic[f"{symbol_combination}"] = regression.bic
+        goodness_of_fit_df = pd.DataFrame(columns=['Symbol Combination', 'R-Squared', 'Adjusted R-Squared', 'AIC', 'BIC'])
+        goodness_of_fit_df['Symbol Combination'] = [f"{symbol_combination}" for symbol_combination in list_of_symbol_combinations]
+        goodness_of_fit_df['R-Squared'] = [goodness_of_fit_r2[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
+        goodness_of_fit_df['Adjusted R-Squared'] = [goodness_of_fit_adj_r2[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
+        goodness_of_fit_df['AIC'] = [goodness_of_fit_aic[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
+        goodness_of_fit_df['BIC'] = [goodness_of_fit_bic[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
+        return goodness_of_fit_df
