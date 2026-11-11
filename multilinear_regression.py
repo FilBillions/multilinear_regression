@@ -126,7 +126,7 @@ class Multilinear_Regression():
             setattr(self, f'standard_error_of_slope_{self.symbol_list[i]}', standard_error)
             self.standard_error_of_slope[f'{self.symbol_list[i]}'] = standard_error
         self.standard_error_of_intercept = self.standard_error_of_estimate * math.sqrt((1/self.n) + (sum([self.means[f'{self.symbol_list[i]}']**2 / self.ssxx[f'{self.symbol_list[i]}'] for i in range(1, self.n_symbols)])))
-    #Hypothesis Testing
+    #t statistic Calculations
         self.t_statistic = {}
         self.t_intercept = self.y_int / self.standard_error_of_intercept
         self.t_statistic['Intercept'] = self.t_intercept
@@ -280,29 +280,73 @@ class Multilinear_Regression():
             print("The residuals are not highly skewed, which is good!")
 
     def goodness_of_fit(self):
-        #run a multilinear regression for each combination of variables
-        #So first run 1 independent 1 dependent, then 2, then 3 etc etc
-        goodness_of_fit_r2 = {}
-        goodness_of_fit_adj_r2 = {}
-        goodness_of_fit_aic = {}
-        goodness_of_fit_bic = {}
-        list_of_symbol_combinations = []
+        #This function creates a Goodness of Fit table the includes all the variable combinations in the set
+        #it is useful for determining which combinations of variables best represent the data
+        self.goodness_of_fit_r2 = {}
+        self.goodness_of_fit_adj_r2 = {}
+        self.goodness_of_fit_aic = {}
+        self.goodness_of_fit_bic = {}
+        self.list_of_symbol_combinations = []
         for symbol in self.symbol_list[1:]:
-            list_of_symbol_combinations.append([self.symbol_list[0], symbol])
+            self.list_of_symbol_combinations.append([self.symbol_list[0], symbol])
         for i in range(2, self.n_symbols):
             for j in range(1, self.n_symbols):
                 if j + i <= self.n_symbols:
-                    list_of_symbol_combinations.append([self.symbol_list[0]] + [self.symbol_list[k] for k in range(j, j + i)])
-        for symbol_combination in list_of_symbol_combinations:
+                    self.list_of_symbol_combinations.append([self.symbol_list[0]] + [self.symbol_list[k] for k in range(j, j + i)])
+        for symbol_combination in self.list_of_symbol_combinations:
             regression = Multilinear_Regression(symbol_list=symbol_combination, sample=False, optional_df=self.df)
-            goodness_of_fit_r2[f"{symbol_combination}"] = regression.r_squared
-            goodness_of_fit_adj_r2[f"{symbol_combination}"] = regression.adjusted_r_squared
-            goodness_of_fit_aic[f"{symbol_combination}"] = regression.aic
-            goodness_of_fit_bic[f"{symbol_combination}"] = regression.bic
+            self.goodness_of_fit_r2[f"{symbol_combination}"] = regression.r_squared
+            self.goodness_of_fit_adj_r2[f"{symbol_combination}"] = regression.adjusted_r_squared
+            self.goodness_of_fit_aic[f"{symbol_combination}"] = regression.aic
+            self.goodness_of_fit_bic[f"{symbol_combination}"] = regression.bic
         goodness_of_fit_df = pd.DataFrame(columns=['Symbol Combination', 'R-Squared', 'Adjusted R-Squared', 'AIC', 'BIC'])
-        goodness_of_fit_df['Symbol Combination'] = [f"{symbol_combination}" for symbol_combination in list_of_symbol_combinations]
-        goodness_of_fit_df['R-Squared'] = [goodness_of_fit_r2[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
-        goodness_of_fit_df['Adjusted R-Squared'] = [goodness_of_fit_adj_r2[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
-        goodness_of_fit_df['AIC'] = [goodness_of_fit_aic[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
-        goodness_of_fit_df['BIC'] = [goodness_of_fit_bic[f"{symbol_combination}"] for symbol_combination in list_of_symbol_combinations]
+        goodness_of_fit_df['Symbol Combination'] = [f"{symbol_combination}" for symbol_combination in self.list_of_symbol_combinations]
+        goodness_of_fit_df['R-Squared'] = [self.goodness_of_fit_r2[f"{symbol_combination}"] for symbol_combination in self.list_of_symbol_combinations]
+        goodness_of_fit_df['Adjusted R-Squared'] = [self.goodness_of_fit_adj_r2[f"{symbol_combination}"] for symbol_combination in self.list_of_symbol_combinations]
+        goodness_of_fit_df['AIC'] = [self.goodness_of_fit_aic[f"{symbol_combination}"] for symbol_combination in self.list_of_symbol_combinations]
+        goodness_of_fit_df['BIC'] = [self.goodness_of_fit_bic[f"{symbol_combination}"] for symbol_combination in self.list_of_symbol_combinations]
+        print("Goodness of Fit Table:")
+        print("Key things to look for in the table:")
+        print("- Highest R-Squared and Adjusted R-Squared values indicate a better fit")
+        print("- Lowest AIC and BIC values indicate a better fit")
+        print("- The magnitude of changes when adding a factor indicates the importance of that factor in explaining the dependent variable")
         return goodness_of_fit_df
+
+    def hypothesis_test_restricted_model(self, restricted_symbol_list, los= 0.05):
+        #This function performs a hypothesis test to determine if the restricted model is significantly different from the unrestricted model
+        #The null hypothesis is that the restricted model is not significantly different from the unrestricted model
+        #The alternative hypothesis is that the restricted model is significantly different from the unrestricted model
+        #The test statistic is F = ((SSEr - SSEu) / (df_r - df_u)) / (SSEu / df_u)
+        #Where SSEr is the sum of squares for the restricted model, SSEu is the sum of squares for the unrestricted model, df_r is the degrees of freedom for the restricted model, and df_u is the degrees of freedom for the unrestricted model
+        #If F > F_critical, we reject the null hypothesis and conclude that the restricted model is significantly different from the unrestricted model
+        #If F < F_critical, we fail to reject the null hypothesis and conclude that the restricted model is not significantly different from the unrestricted model
+        unrestricted_model = self
+        restricted_model = Multilinear_Regression(symbol_list=restricted_symbol_list, sample=False, optional_df=self.df)
+        SSEr = restricted_model.sse
+        SSEu = unrestricted_model.sse
+        k_r = restricted_model.regression_df
+        k_u = unrestricted_model.regression_df
+        F_statistic = ((SSEr - SSEu) / (k_u - k_r)) / (SSEu / (unrestricted_model.n - k_u - 1))
+        F_critical = stats.f.ppf(1 - los, k_u - k_r, unrestricted_model.n - k_u - 1)
+        print("Hypothesis Test for Restricted Model:")
+        print("Null Hypothesis: Factors excluded from the restricted model have a slope of 0")
+        print("Alternative Hypothesis: Atleast one of the excluded factors from the restricted model has a slope not equal to 0")
+        print('---------------------------------')
+        print(f'Critical Value: {round(F_critical, 4)}')
+        print(f'F-Statistic: {round(F_statistic, 4)}')
+        print('---------------------------------')
+        if F_statistic > F_critical:
+            print("Reject the null hypothesis, the restricted model is significantly different from the unrestricted model")
+        else:
+            print("Fail to reject the null hypothesis, the restricted model is not significantly different from the unrestricted model")
+        #Comparison ANOVA Table
+        comparison_anova_df = pd.DataFrame(columns=['Source', 'Factors', 'Degrees of Freedom', 'SSE', 'MSE'])
+        comparison_anova_df['Source'] = ['Restricted Model', 'Unrestricted Model']
+        comparison_anova_df['Factors'] = [restricted_model.symbol_list, unrestricted_model.symbol_list]
+        comparison_anova_df['Degrees of Freedom'] = [restricted_model.n - k_r - 1, unrestricted_model.n - k_u - 1]
+        comparison_anova_df['SSE'] = [restricted_model.sse, unrestricted_model.sse]
+        comparison_anova_df['MSE'] = [restricted_model.mse, unrestricted_model.mse]
+        return comparison_anova_df
+
+    def general_linear_f_test(self):
+        pass
