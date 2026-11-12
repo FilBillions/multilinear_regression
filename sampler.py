@@ -19,10 +19,10 @@ class Sampler:
     def generate_sampled_df(self):
         # if sample.csv exists, use that to sample, or else generate random sample
         if os.path.exists('sample.csv'):
-            # check if sample.csv has the same columns as df
+            # check if sample.csv has the same columns and counts as df
             sampled_df = pd.read_csv('sample.csv', index_col=0, parse_dates=True)
-            if not sampled_df.columns.equals(self.df.columns):
-                print("sample.csv columns do not match the input dataframe columns. Generating a new sample.")
+            if not sampled_df.columns.equals(self.df.columns) or len(sampled_df) != self.sample_size:
+                print("sample.csv columns or counts do not match the input dataframe. Generating a new sample.")
                 os.remove('sample.csv')
                 return self.generate_sampled_df()
             print('-'*20)

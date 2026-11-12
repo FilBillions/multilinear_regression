@@ -19,6 +19,7 @@ class Multilinear_Regression():
                  end = str(date.today() - timedelta(1)),
                  interval = '1d',
                  symbol_list=None,
+                 sample_size=30,
                  sample=True,
                  optional_df=None):
         if optional_df is not None:
@@ -42,7 +43,7 @@ class Multilinear_Regression():
         self.df.dropna(inplace = True)
         #Sample frome the given dataframe
         if sample:
-            sampler = Sampler(self.df)
+            sampler = Sampler(self.df, sample_size=sample_size)
             self.df = sampler.sampled_df
             self.n = len(self.df)
             print(f'Number of Samples: {self.n}')
@@ -236,6 +237,9 @@ class Multilinear_Regression():
             print("R-Squared Table:")
             return self.r_table_df
 
+    def homoscedasticity(self):
+        pass
+
     def scatterplot_matrix(self):
         #for each symbol in the list, create a scatterplot matrix of the returns
         fig = px.scatter_matrix(self.df, 
@@ -310,9 +314,25 @@ class Multilinear_Regression():
         print("- Highest R-Squared and Adjusted R-Squared values indicate a better fit")
         print("- Lowest AIC and BIC values indicate a better fit")
         print("- The magnitude of changes when adding a factor indicates the importance of that factor in explaining the dependent variable")
+    #Line graphs of R-Squared, Adjusted R-Squared, AIC, and BIC for each combination of factors
+    #AIC BIC metrics on the left axis and R-Squared and Adjusted R-Squared on the right axis
+    #sort from lowest to highest BIC
+        goodness_of_fit_df = goodness_of_fit_df.sort_values(by='BIC')
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=goodness_of_fit_df['Symbol Combination'], y=goodness_of_fit_df['R-Squared'], mode='lines+markers', name='R-Squared', yaxis='y2'))
+        fig.add_trace(go.Scatter(x=goodness_of_fit_df['Symbol Combination'], y=goodness_of_fit_df['Adjusted R-Squared'], mode='lines+markers', name='Adjusted R-Squared', yaxis='y2'))
+        fig.add_trace(go.Scatter(x=goodness_of_fit_df['Symbol Combination'], y=goodness_of_fit_df['AIC'], mode='lines+markers', name='AIC', yaxis='y1'))
+        fig.add_trace(go.Scatter(x=goodness_of_fit_df['Symbol Combination'], y=goodness_of_fit_df['BIC'], mode='lines+markers', name='BIC', yaxis='y1'))
+        fig.update_layout(title='Goodness of Fit Metrics for Each Combination of Factors',
+                          xaxis_title='Symbol Combination',
+                          yaxis=dict(title='AIC and BIC', side='left'),
+                          yaxis2=dict(title='R-Squared and Adjusted R-Squared', overlaying='y', side='right'),
+                          width=800,
+                          height=400)
+        fig.show()
         return goodness_of_fit_df
 
-    def hypothesis_test_restricted_model(self, restricted_symbol_list, los= 0.05):
+    def ht_restricted_model(self, restricted_symbol_list, los= 0.05):
         #This function performs a hypothesis test to determine if the restricted model is significantly different from the unrestricted model
         #The null hypothesis is that the restricted model is not significantly different from the unrestricted model
         #The alternative hypothesis is that the restricted model is significantly different from the unrestricted model
@@ -336,9 +356,9 @@ class Multilinear_Regression():
         print(f'F-Statistic: {round(F_statistic, 4)}')
         print('---------------------------------')
         if F_statistic > F_critical:
-            print("Reject the null hypothesis, the restricted model is significantly different from the unrestricted model")
+            print("Reject the null hypothesis, the restricted factors both have a slope of 0")
         else:
-            print("Fail to reject the null hypothesis, the restricted model is not significantly different from the unrestricted model")
+            print("Fail to reject the null hypothesis, atleast one of the excluded factors from the restricted model has a slope not equal to 0")
         #Comparison ANOVA Table
         comparison_anova_df = pd.DataFrame(columns=['Source', 'Factors', 'Degrees of Freedom', 'SSE', 'MSE'])
         comparison_anova_df['Source'] = ['Restricted Model', 'Unrestricted Model']
@@ -348,5 +368,19 @@ class Multilinear_Regression():
         comparison_anova_df['MSE'] = [restricted_model.mse, unrestricted_model.mse]
         return comparison_anova_df
 
-    def general_linear_f_test(self):
-        pass
+    def ht_general_linear_f_test(self, los=0.05):
+        #null hypothesis: all slopes are equal to 0
+        #alternative hypothesis: atleast one slope is not equal to 0
+        general_linear_f_statistic = self.msr / self.mse
+        general_linear_f_critical = stats.f.ppf(1 - los, self.regression_df, self.residual_df)
+        print("General Linear F-Test:")
+        print("Null Hypothesis: All slopes are equal to 0")
+        print("Alternative Hypothesis: Atleast one slope is not equal to 0")
+        print('---------------------------------')
+        print(f'Critical Value: {round(general_linear_f_critical, 4)}')
+        print(f'F-Statistic: {round(general_linear_f_statistic, 4)}')
+        print('---------------------------------')
+        if general_linear_f_statistic > general_linear_f_critical:
+            print("Reject the null hypothesis, atleast one slope is not equal to 0")
+        else:
+            print("Fail to reject the null hypothesis, all slopes are equal to 0")
